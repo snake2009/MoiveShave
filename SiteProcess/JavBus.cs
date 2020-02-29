@@ -1,10 +1,22 @@
 ﻿using HtmlAgilityPack;
+using System;
 using System.Collections.Generic;
+using System.Net.Http;
 
 namespace 老司机影片整理
 {
     internal class JavBus: ISiteProcess
     {
+        private static readonly Lazy<JavBus> lazy =
+        new Lazy<JavBus>(() => new JavBus());
+
+        public static JavBus Instance { get { return lazy.Value; } }
+
+        private JavBus()
+        {
+
+        }
+
         /// <summary>
         /// 获取信息
         /// </summary>
@@ -26,14 +38,34 @@ namespace 老司机影片整理
         {
             //尝试直接打开番号
             HtmlWeb web = new HtmlWeb();
-            var url = $"https://www.dmmbus.cloud/{num}";
-            var doc = web.Load(url);
+            var detailUrl = $"https://www.dmmbus.cloud/{num}";
+            var type = NumberTools.IsUncensored(num);
+            string searchUrl = $"https://www.dmmbus.cloud/{(type ? "uncensored/" : "")}search/{num}&type=1";
+            var doc = web.Load(detailUrl);
             var notFound = doc.DocumentNode.SelectSingleNode("/html/body/div[4]/div/div/h4");
+            //404
             if (notFound != null)
             {
-                //没找到
+                detailUrl = null;
+                //没找到, 搜索一下
+                doc = web.Load(searchUrl);
+                var nodes = doc.DocumentNode.SelectNodes("//*[@id=\"waterfall\"]/div[@id=\"waterfall\"]/div");
+                if (nodes == null)
+                {
+                    //没搜索到
+                    return null;
+                }
+                foreach (var item in nodes)
+                {
+                    if (item.SelectSingleNode("a/div[2]/span/date[1]").InnerText.ToLower().Contains(num.ToLower()))
+                    {
+                        detailUrl = item.SelectSingleNode("a").Attributes["href"].Value;
+                        doc = web.Load(detailUrl);
+                        break;
+                    }
+                }
             }
-            else
+            if (!string.IsNullOrEmpty(detailUrl))
             {
                 var movie = new MovieInfo();
                 var body = doc.DocumentNode;
@@ -115,18 +147,21 @@ namespace 老司机影片整理
                             }
                         }
                     }
-                    List<string> list1 = new List<string>();
-                    foreach (var sub in nodes[nodes.Count - 1].ChildNodes)
+                    if (!nodes[nodes.Count - 1].InnerText.Contains("演員:"))
                     {
-                        var name = sub.InnerText.Replace("\t", "").Replace("\n", "").Replace("\r", "").Replace(" ", "");
-                        if (name != "")
+                        List<string> list1 = new List<string>();
+                        foreach (var sub in nodes[nodes.Count - 1].ChildNodes)
                         {
-                            list1.Add(name);
+                            var name = sub.InnerText.Replace("\t", "").Replace("\n", "").Replace("\r", "").Replace(" ", "");
+                            if (name != "")
+                            {
+                                list1.Add(name);
+                            }
                         }
+                        movie.Star = list1;
                     }
-                    movie.Star = list1;
                 }
-                movie.WebSite = url;
+                movie.WebSite = detailUrl;
                 movie.Generate = "javbus";
                 return movie;
             }

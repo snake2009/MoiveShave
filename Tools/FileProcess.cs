@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Net.Http;
-using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace 老司机影片整理
@@ -42,34 +40,35 @@ namespace 老司机影片整理
 
     internal class FileProcess
     {
-        internal delegate void OnProgressHandle(int value);
         /// <summary>
         /// 进度事件
         /// </summary>
-        internal static OnProgressHandle OnProgress;
+        internal delegate void OnProgressHandle(int value);
 
-        internal delegate void OnLogHandle(string str, string type = "tabPage_main", string color = "black");
         /// <summary>
         /// 日志事件
         /// </summary>
-        internal static OnLogHandle OnLog;
+        internal delegate void OnLogHandle(string str, LogLevels logLevel = LogLevels.Out);
 
-        internal delegate void OnCompleteHandle();
         /// <summary>
         /// 完成事件
         /// </summary>
-        internal static OnCompleteHandle OnComplete;
+        internal delegate void OnCompleteHandle();
+
+        private static Config config;
+        private static OnCompleteHandle OnComplete;
+        private static OnLogHandle OnLog;
+        private static OnProgressHandle OnProgress;
 
         /// <summary>
         /// 当前处理的索引
         /// </summary>
         private static int currentIndex = 0;
-        private static Config config;
 
         /// <summary>
         /// 等待处理的视频列表
         /// </summary>
-        private static List<string> filelist;
+        private static List<VideoInfo> filelist;
 
         /// <summary>
         /// 运行中的线程列表
@@ -90,20 +89,38 @@ namespace 老司机影片整理
         /// 开始执行
         /// </summary>
         /// <param name="_list">文件列表</param>
-        internal static void Start(List<string> _list, Config _config)
+        internal static void Start(List<VideoInfo> _list, Config _config, OnCompleteHandle _onCompleteHandle = null, OnLogHandle _onLogHandle = null, OnProgressHandle _onProgressHandle = null)
         {
+            OnComplete = _onCompleteHandle;
+            OnLog = _onLogHandle;
+            OnProgress = _onProgressHandle;
+            config = _config;
+            filelist = _list;
+
             if (_list.Count > 0)
             {
+                //创建媒体库文件夹
+                if (!Directory.Exists(config.LibraryPath))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(config.LibraryPath);
+                    }
+                    catch (Exception)
+                    {
+                        OnLog?.Invoke($"创建媒体库 \"{config.LibraryPath}\" 失败，请检查分区是否存在或者选择一个新路径作为媒体库");
+                        OnComplete?.Invoke();
+                        return;
+                    }
+                }
                 currentIndex = 0;
-                filelist = _list;
-                config = _config;
                 //更新状态为运行中
                 State = States.Runing;
-                StartThread(_list.Count >= config.MaxThread ? config.MaxThread : _list.Count);
+                StartThread(filelist.Count >= config.MaxThread ? config.MaxThread : filelist.Count);
             }
             else
             {
-                OnLog?.Invoke($"没有需要处理的视频文件");
+                OnLog?.Invoke($"没有需要处理的视频文件", LogLevels.Waining);
                 OnComplete?.Invoke();
             }
         }
@@ -123,7 +140,7 @@ namespace 老司机影片整理
                     {
                         Thread.Sleep(10);
                         //处理
-                        Proc();
+                        ProcMoive();
                     }
                     //循环结束，触发完成事件
                     Complete();
@@ -140,72 +157,49 @@ namespace 老司机影片整理
         /// <summary>
         /// 处理视频
         /// </summary>
-        private static void Proc()
+        private static void ProcMoive()
         {
             //获取当前等待处理的文件
-            string filename = GetFileName();
+            var videoInfo = GetFileName();
+            if (!string.IsNullOrEmpty(videoInfo.nfo) || !File.Exists(videoInfo.filename))
+            {
+                return;
+            }
+            int i = currentIndex - 1;
+            //是否取到文件
+            if (string.IsNullOrEmpty(videoInfo.filename) 
+                || string.IsNullOrEmpty(videoInfo.name) 
+                || string.IsNullOrEmpty(videoInfo.num))
+                return;
+            Log.Save($"开始处理文件 {videoInfo.filename}");
             try
             {
-                int i = currentIndex;
-                if (string.IsNullOrEmpty(filename))
-                    return;
-                var dirName = Path.GetDirectoryName(filename);
-                //提取番号
-                string num = GetMovieNum(filename);
-                if (num == "")
-                {
-                    //没提取出番号，下一个
-                    OnLog?.Invoke($"未能提取番号 {filename}", Thread.CurrentThread.Name);
-                    return;
-                }
-                OnLog?.Invoke($"==========开始处理{num}==========", Thread.CurrentThread.Name);
+                OnLog?.Invoke($"==========开始处理{videoInfo.num}==========");
                 int value = (int)(i * 10.0 / filelist.Count * 10.0);
                 OnProgress?.Invoke(value);
                 //获取影片信息
-                MovieInfo info = GetMovieInfo(num, config);
-                if (info == null)
-                {
-                    //没取到信息，下一个
-                    OnLog?.Invoke($"未取到影片信息【{filename}】");
-                    return;
-                }
-                OnLog?.Invoke($"1.获取信息完成", Thread.CurrentThread.Name, "Green");
-                //移动视频
-                var videoPath = MoveVideo(filename, info, config);
-                if (videoPath == "")
-                    return;
-                OnLog?.Invoke($"2.移动视频完成", Thread.CurrentThread.Name, "Green");
+                Log.Save($"准备获取影片信息 {videoInfo.num}");
+                Log.Save($"无码影片: {videoInfo.avtype}");
+                MovieInfo info = GetMovieInfo(videoInfo.num, config);
+                filelist[i].generate = info.Generate;
+                filelist[i].info = "成功";
 
-                //下载背景图
-                var backdropPath = DownImage(videoPath, info.Backdrop, "Backdrop.jpg");
-                if (backdropPath == "")
-                {
-                    if (info.Generate == "avsox")
-                    {
-                        info = GetMovieInfo(num, config, SiteTypes.javbus);
-                        if (info == null)
-                            return;
-                        backdropPath = DownImage(videoPath, info.Backdrop, "Backdrop.jpg");
-                        if (backdropPath == "")
-                            return;
-                    }
-                }
-                OnLog?.Invoke($"3.下载背景图完成", Thread.CurrentThread.Name, "Green");
+                //移动视频
+                var videoPath = MoveVideo(videoInfo.filename, info, config);
+                filelist[i].video = "成功";
 
                 //处理封面图
-                ProcessCover(videoPath, backdropPath, info);
-                OnLog?.Invoke($"4.处理封面图完成", Thread.CurrentThread.Name, "Green");
+                ProcessCover(videoInfo.num, videoPath, info, filelist[i]);
 
                 //创建NFO文件
-                if (config.CreateNfo)
-                {
-                    NfoProcess.Create($"{videoPath}{Path.DirectorySeparatorChar}{info.Number}.nfo", info, config);
-                    OnLog?.Invoke($"5.创建nfo文件完成", Thread.CurrentThread.Name, "Green");
-                }
+                NfoTools.Create($"{videoPath}{Path.DirectorySeparatorChar}{info.Number}.nfo", info, config);
+                OnLog?.Invoke($"创建nfo文件完成", LogLevels.Success);
+                Log.Save($"创建nfo文件完成");
+                filelist[i].nfo = "成功";
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                OnLog?.Invoke($"取到影片信息出错 {filename}");
+                OnLog?.Invoke($"处理出错 {e.Message}\n{e.StackTrace}", LogLevels.Error);
             }
         }
 
@@ -214,48 +208,65 @@ namespace 老司机影片整理
         /// </summary>
         /// <param name="videoPath">视频文件夹</param>
         /// <param name="backdropPath">背景图</param>
-        private static void ProcessCover(string videoPath, string backdropPath, MovieInfo info)
+        private static void ProcessCover(string num, string videoPath, MovieInfo info, VideoInfo videoInfo)
         {
-            var coverPath = $"{videoPath}{Path.DirectorySeparatorChar}Cover.png";
-            //如果有现成封面就下载
+            //下载背景图
+            var backdropPath = DownImage(videoPath, info.Backdrop, "Backdrop.jpg", config.SkipExistsImage);
+            if (backdropPath == "")
+            {
+                if (info.Generate == "avsox")//avsox 老片子个别没图片，用javbus 在尝试一次
+                {
+                    Log.Save($"下载 avsox 图片失败, 换 javbus");
+                    info = GetMovieInfo(num, config, SiteTypes.javbus);
+                    if (info != null)
+                    {
+                        backdropPath = DownImage(videoPath, info.Backdrop, "Backdrop.jpg", config.SkipExistsImage);
+                    }
+                }
+            }
+            if (backdropPath == "")
+            {
+                Log.Save($"下载背景图失败失败");
+                throw new Exception("下载背景图失败");
+            }
+            OnLog?.Invoke($"下载背景图完成", LogLevels.Success);
+            videoInfo.back = "成功";
+
+            string coverPath;
+            //如果有现成的就下载
             if (!string.IsNullOrEmpty(info.Cover))
             {
+                Log.Save($"下载网站上的封面");
                 //下载封面
-                DownImage(videoPath, info.Cover, "Cover.png");
-                var img = Image.FromFile(coverPath);
-                //封面图高度大于396直接返回，不再处理
-                if (img.Height >= 396)
+                coverPath = DownImage(videoPath, info.Cover, "Cover.png");
+                if (coverPath != "")
                 {
+                    var img = Image.FromFile(coverPath);
+                    if (img.Height >= 396 && Math.Abs(img.Height * 0.7029702970297 - img.Width) <= 5)
+                    {
+                        //封面图高度大于396，可以用，不再处理
+                        img.Dispose();
+                        return;
+                    }
                     img.Dispose();
-                    return;
+                    img = Image.FromFile(backdropPath);
+                    if (img.Height <= 350)
+                    {
+                        //背景图高度<396，没有截图的必要，不再处理
+                        img.Dispose();
+                        return;
+                    }
+                    img.Dispose();
                 }
-                img.Dispose();
             }
-            Image coverImage = null;
-            //没有封面裁剪封面
-            if (config.AIClip)
-            {
-                //从背景图识别智能裁剪封面
-                coverImage = ImageProcess.GetCoverByAI(backdropPath, config);
-            }
-            else
-            {
-                //从背景图识别智能裁剪封面
-                coverImage = ImageProcess.GetCover(backdropPath, config);
-            }
-            if (coverImage != null)
-            {
-                //保存封面
-                //File.Delete(coverPath);
-                coverImage.Save(coverPath, ImageFormat.Png);
-                coverImage.Dispose();
-            }
-            else
-            {
-                OnLog?.Invoke($"处理封面图出错 {info.Number}");
-            }
-        }
 
+            Log.Save($"下载识别，或者下载的尺寸太小，准备截图");
+            //没发下载，或者下载的尺寸太小 需要截图
+            new ImageTools(config).ClipCover(videoPath, backdropPath, !config.CensoredNoAI && videoInfo.avtype != "无码");
+            videoInfo.cover = "成功";
+            Log.Save($"处理封面图完成");
+            OnLog?.Invoke($"处理封面图完成", LogLevels.Success);
+        }
 
         /// <summary>
         /// 获取影片信息
@@ -266,18 +277,21 @@ namespace 老司机影片整理
         private static MovieInfo GetMovieInfo(string num, Config config, SiteTypes userSite = SiteTypes.Auto)
         {
             MovieInfo info = null;
-            var site = userSite != SiteTypes.Auto ? userSite :(SiteTypes)Enum.Parse(typeof(SiteTypes), config.Site.ToString());
+            var site = userSite != SiteTypes.Auto ? userSite : (SiteTypes)Enum.Parse(typeof(SiteTypes), config.Site.ToString());
             switch (site)
             {
                 case SiteTypes.All:
-                    if (IsUncensored(num)) //无码处理
+                    Log.Save($"使用系统默认采集顺序");
+                    if (NumberTools.IsUncensored(num)) //无码处理
                     {
                         if (num.StartsWith("fc2", StringComparison.CurrentCultureIgnoreCase))
                         {
+                            Log.Save($"使用 Fc2Club 影片采集");
                             //fc2 单独处理
                             info = new Fc2Club().GetInfoAsync(num);
                             if (info == null)
                             {
+                                Log.Save($"Fc2Club 采集失败，使用 Javdb 采集");
                                 //未找到再 Javdb
                                 info = new Javdb().GetInfoAsync(num);
                             }
@@ -285,13 +299,16 @@ namespace 老司机影片整理
                         else
                         {
                             // 先 Avsox
-                            info = new Avsox().GetInfoAsync(num);
+                            Log.Save($"使用 Avsox 影片采集");
+                            info = Avsox.Instance.GetInfoAsync(num);
                             if (info == null)
                             {
                                 //未找到再 JavBus
-                                info = new JavBus().GetInfoAsync(num);
+                                Log.Save($"Avsox 采集失败，使用 JavBus 采集");
+                                info = JavBus.Instance.GetInfoAsync(num);
                                 if (info == null)
                                 {
+                                    Log.Save($"JavBus 采集失败，使用 Javdb 采集");
                                     //未找到再 Javdb
                                     info = new Javdb().GetInfoAsync(num);
                                 }
@@ -301,14 +318,17 @@ namespace 老司机影片整理
                     else
                     {
                         //先 Avmoo
+                        Log.Save($"使用 Avmoo 影片采集");
                         info = new Avmoo().GetInfoAsync(num);
                         if (info == null)
                         {
                             //未找到再 avBus
-                            info = new JavBus().GetInfoAsync(num);
+                            Log.Save($"Avmoo 采集失败，使用 JavBus 采集");
+                            info = JavBus.Instance.GetInfoAsync(num);
                             if (info == null)
                             {
                                 //未找到再 Javdb
+                                Log.Save($"JavBus 采集失败，使用 Javdb 采集");
                                 info = new Javdb().GetInfoAsync(num);
                                 /*if (info == null)
                                 {
@@ -317,80 +337,56 @@ namespace 老司机影片整理
                                 }*/
                             }
                         }
+                        else
+                        {
+                            if (info.Star == null)
+                            {
+                                //未找到再 avBus
+                                Log.Save($"Avmoo 未采集到演员，使用 JavBus 采集");
+                                info = JavBus.Instance.GetInfoAsync(num);
+                            }
+                        }
                     }
                     break;
                 case SiteTypes.javbus:
-                    info = new JavBus().GetInfoAsync(num);
+                    Log.Save($"使用 JavBus 采集");
+                    info = JavBus.Instance.GetInfoAsync(num);
                     break;
                 case SiteTypes.avsox:
-                    info = new Avsox().GetInfoAsync(num);
+                    Log.Save($"使用 Avsox 采集");
+                    info = Avsox.Instance.GetInfoAsync(num);
                     break;
                 case SiteTypes.javlibrary:
+                    Log.Save($"使用 JavLibrary 采集");
                     info = new JavLibrary().GetInfoAsync(num);
                     break;
                 case SiteTypes.fc2club:
+                    Log.Save($"使用 Fc2Club 采集");
                     info = new Fc2Club().GetInfoAsync(num);
                     break;
                 case SiteTypes.avmoo:
+                    Log.Save($"使用 Avmoo 采集");
                     info = new Avmoo().GetInfoAsync(num);
                     break;
                 case SiteTypes.javdb:
+                    Log.Save($"使用 Javdb 采集");
                     info = new Javdb().GetInfoAsync(num);
                     break;
             }
             if (info != null)
             {
                 info.Number = num;
+                Log.Save($"获取影片信息完成 <= [{info.Generate}]");
+                OnLog?.Invoke($"获取影片信息完成 <= [{info.Generate}]", LogLevels.Success);
+                return info;
             }
-            return info;
+            else
+            {
+                Log.Save($"未获取到影片信息");
+                throw new Exception($"未获取到影片信息 {num}");
+            }
         }
 
-        /// <summary>
-        /// 判断番号是否无码
-        /// </summary>
-        /// <param name="num">番号</param>
-        /// <returns>是否无码</returns>
-        private static bool IsUncensored(string num)
-        {
-            var name = num.ToLower();
-            return name.Contains("sky")
-                || name.Contains("red")
-                || name.Contains("rhj")
-                || name.Contains("sskj")
-                || name.Contains("ccdv")
-                || name.Contains("sskp")
-                || name.Contains("sskx")
-                || name.Contains("heyzo")
-                || name.Contains("laf")
-                || name.Contains("cwp")
-                || name.Contains("mcb")
-                || name.Contains("gachip")
-                || name.Contains("s2m")
-                || name.Contains("smd")
-                || name.Contains("cwdv")
-                || name.Contains("mcdv")
-                || name.Contains("mcbd")
-                || name.Contains("mcb3dbd")
-                || name.Contains("mk3d2dbd")
-                || name.Contains("jukujo")
-                || name.Contains("drc")
-                || name.Contains("bt-")
-                || name.Contains("ct-")
-                || name.Contains("pt-")
-                || name.Contains("bd-")
-                || name.Contains("candys")
-                || name.Contains("fh-")
-                || name.Contains("kg-")
-                || name.Contains("mx-")
-                || name.Contains("dnk")
-                || name.Contains("fc2")
-                || Regex.Match(name, @"^n\d{4}").Success
-                || Regex.Match(name, @"\d{6}[-_]\d{2,3}").Success //030312_01 021816-099
-                || Regex.Match(name, @"\d{6}[-_]\d{3}[-_]\d{2}").Success //021816-099
-                || Regex.Match(name, @"\d{6}[-_][a-z_A-Z]+").Success //120316-SAKI_NOZOMI
-                || name.Contains("dsam");
-        }
-        
         /// <summary>
         /// 移动视频
         /// </summary>
@@ -401,27 +397,72 @@ namespace 老司机影片整理
         {
             try
             {
+                Log.Save($"准备移动视频");
                 var extName = Path.GetExtension(filename);
-                var starPath = $"{config.LabraryPath}{Path.DirectorySeparatorChar}{info.Star[0]}";
+                var star = (info.Star == null ? "未知" : info.Star[0]);
+                star = star.Replace("/", " ").Replace(@"\", "").Replace("?", "");
+                var starPath = $"{config.LibraryPath}{Path.DirectorySeparatorChar}{star}";
                 //创建演员文件夹
+                Log.Save($"创建演员文件夹 {starPath}");
                 Directory.CreateDirectory(starPath);
                 //移动视频
-                string newName = config.PathTemplate.Replace("$番号", info.Number).Replace("$标题", info.Title).Replace("$年代", info.Year).Replace("$女优", info.Star[0]);
-                newName = newName.Replace(" : ", "").Replace("\\", "").Replace("/", "").TrimStart().TrimEnd();
-                string videoPath = $"{starPath}{Path.DirectorySeparatorChar}{(newName.Length > 50 ? newName.Substring(0, 50) : newName)}";
+                string newName = config.PathTemplate.Replace("$番号", info.Number).Replace("$标题", info.Title).Replace("$年代", info.Year).Replace("$女优", info.Star==null?"": info.Star[0]);
+                newName = newName.Replace(" : ", "").Replace(":", "").Replace("?", "").Replace("/", "").Replace("*", "").Replace("\n", "").Replace(@"\", "").TrimStart().TrimEnd();
+                string videoPath = $"{starPath}{Path.DirectorySeparatorChar}{(newName.Length > 50 ? newName.Substring(0, 50) : newName)}".TrimEnd();
+                Log.Save($"创建视频文件夹 {videoPath}"); 
                 Directory.CreateDirectory(videoPath);
                 string newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}{extName}";
-                if(File.Exists(filename)){
-                    File.WriteAllText(newFilePath, "111");
-                    //File.Move(filename, newFilePath);
+                //判断是否两个视频
+                var dirName = Path.GetDirectoryName(filename);
+                var name = Path.GetFileNameWithoutExtension(filename);
+                var filename1 = $"{dirName}{Path.DirectorySeparatorChar}{name}_1{extName}";
+                var filename2 = $"{dirName}{Path.DirectorySeparatorChar}{name}_2{extName}";
+                var filename3 = $"{dirName}{Path.DirectorySeparatorChar}{name}_3{extName}";
+                var filename4 = $"{dirName}{Path.DirectorySeparatorChar}{name}_4{extName}";
+                if (File.Exists(filename1))
+                {
+                    newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd1{extName}";
+                    File.Move(filename, newFilePath);
+                    Log.Save($"移动cd1完成 {newFilePath}");
+
+                    newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd2{extName}";
+                    File.Move(filename1, newFilePath);
+                    Log.Save($"移动cd2完成 {newFilePath}");
+                    if (File.Exists(filename2))
+                    {
+                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd3{extName}";
+                        File.Move(filename2, newFilePath);
+                        Log.Save($"移动cd3完成 {newFilePath}");
+                    }
+                    if (File.Exists(filename3))
+                    {
+                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd4{extName}";
+                        File.Move(filename3, newFilePath);
+                        Log.Save($"移动cd3完成 {newFilePath}");
+                    }
+                    if (File.Exists(filename4))
+                    {
+                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd5{extName}";
+                        File.Move(filename4, newFilePath);
+                        Log.Save($"移动cd3完成 {newFilePath}");
+                    }
+                    OnLog?.Invoke($"移动多个视频完成", LogLevels.Success);
+
+                    return videoPath;
+                }
+                else
+                {
+                    File.Move(filename, newFilePath);
+                    OnLog?.Invoke($"移动视频完成", LogLevels.Success); 
+                    Log.Save($"移动视频完成 {newFilePath}");
                     return videoPath;
                 }
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                OnLog?.Invoke($"移动视频出错 {info.Number}");
+                OnLog?.Invoke($"移动视频出错 {info.Number}", LogLevels.Error);
+                throw e;
             }
-            return "";
         }
 
         /// <summary>
@@ -429,43 +470,25 @@ namespace 老司机影片整理
         /// </summary>
         /// <param name="filename">目录名</param>
         /// <param name="cover">图片地址</param>
-        private static string DownImage(string dirName, string imgUrl, string fileName)
+        private static string DownImage(string dirName, string imgUrl, string fileName, bool skipExistsImage = false)
         {
+            var imgPath = $"{dirName}{Path.DirectorySeparatorChar}{fileName}";
             try
             {
-                HttpClient client = new HttpClient();
-                var stram = client.GetStreamAsync(imgUrl).GetAwaiter().GetResult();
-                var imgPath = $"{dirName}{Path.DirectorySeparatorChar}{fileName}";
-                Image.FromStream(stram).Save(imgPath);
+                if (!skipExistsImage || !File.Exists(imgPath))
+                {
+                    HttpClient client = new HttpClient();
+                    var stram = client.GetStreamAsync(imgUrl).GetAwaiter().GetResult();
+                    Image.FromStream(stram).Save(imgPath);
+                }
+                Log.Save($"下载图片成功 [{imgPath}]");
                 return imgPath;
             }
-            catch
+            catch(Exception e)
             {
-                OnLog?.Invoke($"下载图片出错 {imgUrl}");
+                Log.Save($"下载图片失败 [{imgUrl}] {e.Message}");
                 return "";
             }
-        }
-
-        /// <summary>
-        /// 从文件名获取番号
-        /// </summary>
-        /// <param name="filename">文件名</param>
-        /// <returns>番号</returns>
-        private static string GetMovieNum(string filename)
-        {
-            //优先处理 (FC2)(745325) 这种格式
-            var re = Regex.Match(filename, @"\(FC2\)\([0-9]{6,8}\)");
-            if (re.Success)
-            {
-                return re.Groups[0].Value.Replace(")(", "-").Replace("(", "").Replace(")", "");
-            }
-            //正则匹配番号 支持 [AAA-111] [AAA_111] [AAA|111] [AAA 111] 四种格式，AAA支持1~8位长度允许夹杂数字（S2MBD-001），111支持2~8位数字
-            re = Regex.Match(filename, @"([a-zA-Z0-9]{1,8})[-|_|\s]{0,3}([0-9]{2,8})(.*?)");
-            if (re.Success)
-            {
-                return re.Groups[0].Value;
-            }
-            return "";
         }
 
         /// <summary>
@@ -487,7 +510,7 @@ namespace 老司机影片整理
         /// 获取下一个要处理的视频文件
         /// </summary>
         /// <returns>文件名</returns>
-        private static string GetFileName()
+        private static VideoInfo GetFileName()
         {
             lock (syncState)
             {

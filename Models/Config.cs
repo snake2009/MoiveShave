@@ -5,7 +5,7 @@
         /// <summary>
         /// 网站来源 0 自适应 1 javbus 2 javlibrary 3 avsox【无码】4 fc2club
         /// </summary>
-        public int Site { get; internal set; }
+        public int Site { get;set; }
         /// <summary>
         /// 文件名重命名模版
         /// </summary>
@@ -17,7 +17,7 @@
         /// <summary>
         /// 媒体库路径
         /// </summary>
-        public string LabraryPath { get; set; }
+        public string LibraryPath { get; set; }
         /// <summary>
         /// AI截图
         /// </summary>
@@ -42,5 +42,21 @@
         /// 媒体库显示标题模版
         /// </summary>
         public string TitleTemplate { get; set; }
+        /// <summary>
+        /// 跳过存在的图片
+        /// </summary>
+        public bool SkipExistsImage { get;set; }
+        /// <summary>
+        /// 跳过搜索存在nfo的视频
+        /// </summary>
+        public bool SkipSearchExistsNfo { get; set; }
+        /// <summary>
+        /// 有码片不使用AI裁剪
+        /// </summary>
+        public bool CensoredNoAI { get; set; }
+        /// <summary>
+        /// AI人脸识别准确度阀值
+        /// </summary>
+        public double AIScore { get; set; }
     }
 }

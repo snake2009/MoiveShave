@@ -44,6 +44,10 @@
     <Reference Include="AipSdk, Version=3.6.14.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>packages\Baidu.AI.3.6.14\lib\net45\AipSdk.dll</HintPath>
     </Reference>
+    <Reference Include="DevComponents.DotNetBar2, Version=14.1.0.34, Culture=neutral, PublicKeyToken=7eb7c3a35b91de04, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\Lib\DevComponents.DotNetBar2.dll</HintPath>
+    </Reference>
     <Reference Include="HtmlAgilityPack, Version=1.11.21.0, Culture=neutral, PublicKeyToken=bd319b19eaf3b43a, processorArchitecture=MSIL">
       <HintPath>packages\HtmlAgilityPack.1.11.21\lib\Net45\HtmlAgilityPack.dll</HintPath>
     </Reference>
@@ -58,6 +62,13 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Forms\InfoCard.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\InfoCard.Designer.cs">
+      <DependentUpon>InfoCard.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Models\VideoInfo.cs" />
     <Compile Include="SiteProcess\Javdb.cs" />
     <Compile Include="SiteProcess\Avmoo.cs" />
     <Compile Include="SiteProcess\Avsox.cs" />
@@ -74,10 +85,15 @@
     </Compile>
     <Compile Include="Models\Config.cs" />
     <Compile Include="Models\MovieInfo.cs" />
-    <Compile Include="Tools\ImageProcess.cs" />
-    <Compile Include="Tools\NfoProcess.cs" />
+    <Compile Include="Tools\ImageTools.cs" />
+    <Compile Include="Tools\Log.cs" />
+    <Compile Include="Tools\NfoTools.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Tools\NumberTools.cs" />
+    <EmbeddedResource Include="Forms\InfoCard.resx">
+      <DependentUpon>InfoCard.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Forms\MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>
     </EmbeddedResource>

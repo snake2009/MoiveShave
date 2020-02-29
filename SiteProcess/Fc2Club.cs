@@ -36,7 +36,7 @@ namespace 老司机影片整理
                 movie.Cover = "";//留空为需要裁剪的
                 movie.Backdrop = "https://fc2club.com" + body.SelectSingleNode("/html/body/div[2]/div/div[1]/div[3]/ul[1]/li[1]/img").Attributes["src"].Value;
                 //标题
-                movie.Title = body.SelectSingleNode("/html/body/div[2]/div/div[1]/h3").InnerText;
+                movie.Title = body.SelectSingleNode("/html/body/div[2]/div/div[1]/h3").InnerText.Replace(num.ToUpper(), "");
                 movie.Year = "";
                 movie.Length = "";
                 movie.Studio = body.SelectSingleNode("/html/body/div[2]/div/div[1]/h5[3]/a[1]").InnerText;

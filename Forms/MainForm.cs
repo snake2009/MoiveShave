@@ -1,27 +1,53 @@
-﻿using Newtonsoft.Json;
+﻿using DevComponents.DotNetBar;
+using Newtonsoft.Json;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Windows.Forms;
+using System.Xml;
 
 namespace 老司机影片整理
 {
-    public partial class MainForm : Form
+    public partial class MainForm : OfficeForm
     {
         private bool IsRun;
         private List<string> Notkeys;
         private Config config = new Config();
         private string configPath;
+        private BindingSource bs_file;
+        private InfoCard selectCard;
+        private List<string> libFiles;
+        private int libPage = -1;
+
+        private List<VideoInfo> VideoFileList { get; set; } = new List<VideoInfo>();
 
         public MainForm()
         {
             InitializeComponent();
+            table.BackgroundColor = Color.AliceBlue;
+            tabControlPanel1.Style.BackColor2.Color = Color.White;
+            tabControlPanel2.Style.BackColor2.Color = Color.White;
+            tabControlPanel3.Style.BackColor2.Color = Color.White;
+            tabControlPanel4.Style.BackColor2.Color = Color.White;
+            SetToastNotification();
             Notkeys = new List<string>();
             LoadConfig();
+        }
+
+        private void SetToastNotification()
+        {
+            ToastNotification.DefaultToastPosition = eToastPosition.MiddleCenter;
+            ToastNotification.DefaultTimeoutInterval = 1100;
+            ToastNotification.ToastFont = new Font("微软雅黑", 14F);
+            ToastNotification.ToastBackColor = Color.FromArgb(50, 50, 50);
+            ToastNotification.ToastForeColor = Color.FromArgb(200, 255, 255, 255);
         }
 
         private void LoadConfig()
@@ -37,20 +63,21 @@ namespace 老司机影片整理
                 }
                 comboBox_site.SelectedIndex = config.Site;
                 checkBox_createnfo.Checked = config.CreateNfo;
-                textBox_labrarypath.Text = config.LabraryPath;
+                textBox_librarypath.Text = config.LibraryPath;
                 textBox_titletemplate.Text = config.TitleTemplate;
                 textBox_pathtemplate.Text = config.PathTemplate;
                 radioButton_clip.Checked = !config.AIClip;
                 radioButton_aiclip.Checked = config.AIClip;
                 textBox_apikey.Text = config.BD_API_KEY;
                 textBox_secretkey.Text = config.BD_SECRET_KEY;
-                numericUpDown_maxthread.Value = config.MaxThread;
+                checkBox_imgnodown.Checked = config.SkipExistsImage;
+                checkBox_filternfo.Checked = config.SkipSearchExistsNfo;
+                checkBox_noai.Checked = config.CensoredNoAI;
+                doubleInput_score.Value = config.AIScore;
             }
             else
             {
                 comboBox_site.SelectedIndex = 0;
-                pathListBox.Items.Add(@"F:\剑客\东洋\测试");
-                textBox_labrarypath.Text = @"F:\剑客\东洋\测试";
             }
         }
 
@@ -64,22 +91,8 @@ namespace 老司机影片整理
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            //绑定FileProcess事件
-            FileProcess.OnProgress += (value) =>
-            {
-                UpdateProgress(value);
-            };
-            FileProcess.OnLog += (str, type, color) =>
-            {
-                LogAdd(str, type, color);
-            };
-            FileProcess.OnComplete += () =>
-            {
-                //更新界面为停止运行
-                UpdateUI(false);
-                toolStripStatusLabel1.Text = "整理完成";
-                IsRun = false;
-            };
+            bs_file = new BindingSource(VideoFileList, "");
+            table.DataSource = bs_file;
 
             Notkeys.Add("獨佔動畫");
             Notkeys.Add("６９");
@@ -193,14 +206,109 @@ namespace 老司机影片整理
             DialogResult dr = fbd.ShowDialog();
             if (dr == DialogResult.OK)
             {
-                pathListBox.Items.Add(fbd.SelectedPath);
+                //检查用户添加是否是文件夹
+                if (Directory.Exists(fbd.SelectedPath))
+                {
+                    //List<VideoInfo> list = new List<VideoInfo>();
+                    //获取目录下面的视频文件
+                    var files = Directory.EnumerateFiles(fbd.SelectedPath, "*.*", SearchOption.AllDirectories)
+                        .Where(f =>
+                        {
+                            var filename = Path.GetFileNameWithoutExtension(f);
+                            return (f.EndsWith(".mkv", StringComparison.CurrentCultureIgnoreCase) ||
+                            f.EndsWith(".mp4", StringComparison.CurrentCultureIgnoreCase) ||
+                            f.EndsWith(".avi", StringComparison.CurrentCultureIgnoreCase) ||
+                            f.EndsWith(".asf", StringComparison.CurrentCultureIgnoreCase) ||
+                            f.EndsWith(".wmv", StringComparison.CurrentCultureIgnoreCase) ||
+                            f.EndsWith(".rmvb", StringComparison.CurrentCultureIgnoreCase) ||
+                            f.EndsWith(".rm", StringComparison.CurrentCultureIgnoreCase)) &&
+                            !filename.EndsWith("-cd1", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("-cd2", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("-cd3", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("-cd4", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("-cd5", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("_1", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("_2", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("_3", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("_4", StringComparison.CurrentCultureIgnoreCase);
+                        }).Select(f =>
+                        {
+                            var name = Path.GetFileName(f);
+                            return new VideoInfo()
+                            {
+                                name = name,
+                                filename = f,
+                                num = NumberTools.Get(name),
+                                avtype = NumberTools.IsUncensored(name) ? "无码" : ""
+                            };
+                        }).ToList();
+                    //过滤已经存在nfo的视频
+                    if (checkBox_filternfo.Checked)
+                    {
+                        for (int i = 0; i < files.Count; i++)
+                        {
+                            var item = files[i];
+                            var name = $"{Path.GetDirectoryName(item.filename)}{Path.DirectorySeparatorChar}{Path.GetFileNameWithoutExtension(item.name).Replace("-cd1", "").Replace("-cd2", "")}.nfo";
+                            if (File.Exists(name))
+                            {
+                                files.RemoveAt(i);
+                                i--;
+                            }
+                        }
+                    }
+                    files.Sort((x1, y1) =>
+                    {
+                        if (x1.num != null && y1.num != null)
+                        {
+                            return x1.num.CompareTo(y1.num);
+                        }
+                        return 0;
+                    });
+                    for (int i = 0; i < files.Count; i++)
+                    {
+                        files[i].index = i + 1;
+                    }
+                    VideoFileList.AddRange(files);
+                    bs_file.ResetBindings(false);
+                    ShowToast($"共搜索到 {VideoFileList.Count} 个视频文件");
+                }
             }
             fbd.Dispose();
         }
 
         private void button_clearpath_Click(object sender, EventArgs e)
         {
-            pathListBox.Items.Clear();
+            if (!IsRun)
+            {
+                for (int i = 0; i < VideoFileList.Count; i++)
+                {
+                    if (!string.IsNullOrEmpty(VideoFileList[i].nfo))
+                    {
+                        table.Rows.RemoveAt(i);
+                        i--;
+                    }
+                }
+                for (int i = 0; i < VideoFileList.Count; i++)
+                {
+                    VideoFileList[i].index = i + 1;
+                }
+            }
+            else
+            {
+                ShowToast("请先停止任务，再清空");
+            }
+        }
+
+        private void button_clearall_Click(object sender, EventArgs e)
+        {
+            if (!IsRun)
+            {
+                table.Rows.Clear();
+            }
+            else
+            {
+                ShowToast("请先停止任务，再清空");
+            }
         }
 
         private void button_selectlabrarypath_Click(object sender, EventArgs e)
@@ -209,27 +317,9 @@ namespace 老司机影片整理
             DialogResult dr = fbd.ShowDialog();
             if (dr == DialogResult.OK)
             {
-                textBox_labrarypath.Text = fbd.SelectedPath;
+                textBox_librarypath.Text = fbd.SelectedPath;
             }
             fbd.Dispose();
-        }
-
-        private void radioButton_aiclip_CheckedChanged(object sender, EventArgs e)
-        {
-            textBox_apikey.Enabled = radioButton_aiclip.Checked;
-            textBox_secretkey.Enabled = radioButton_aiclip.Checked;
-            label4.Enabled = radioButton_aiclip.Checked;
-            label5.Enabled = radioButton_aiclip.Checked;
-            if (radioButton_aiclip.Checked)
-            {
-                numericUpDown_maxthread.Maximum = 2;
-            }
-            else
-            {
-                numericUpDown_maxthread.Maximum = 10;
-            }
-            config.AIClip = radioButton_aiclip.Checked;
-            SaveConfig();
         }
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
@@ -264,6 +354,14 @@ namespace 老司机影片整理
             Start();
         }
 
+        private void table_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex == 2)
+            {
+                Process.Start(Path.GetDirectoryName(table[1, e.RowIndex].Value.ToString()));
+            }
+        }
+
         #endregion
 
         /// <summary>
@@ -274,91 +372,286 @@ namespace 老司机影片整理
             if (IsRun)
             {
                 FileProcess.Stop();
-                toolStripStatusLabel1.Text = "手动停止中...";
+                ShowToast("手动停止中...");
                 button_start.Enabled = false;
+                progressBar1.Visible = false;
                 return;
             }
-            if (pathListBox.Items.Count > 0)
+            IsRun = true;
+            config.MaxThread = 1;
+            progressBar1.Visible = true;
+            //开始整理
+            FileProcess.Start(VideoFileList, config, new FileProcess.OnCompleteHandle(() =>
             {
-                IsRun = true;
-                //整理配置
-                config.Site = comboBox_site.SelectedIndex;
-                config.PathTemplate = textBox_pathtemplate.Text;
-                config.TitleTemplate = textBox_titletemplate.Text;
-                config.LabraryPath = textBox_labrarypath.Text;
-                config.AIClip = radioButton_aiclip.Checked;
-                config.CreateNfo = checkBox_createnfo.Checked;
-                config.MaxThread = (int)numericUpDown_maxthread.Value;
-                //创建媒体库文件夹
-                if (!Directory.Exists(config.LabraryPath))
-                {
-                    Directory.CreateDirectory(config.LabraryPath);
-                }
-                //设置进度条为流水效果
-                progressBar1.Style = ProgressBarStyle.Marquee;
-                //准备路径数组
-                List<string> list = new List<string>();
-                foreach (string item in (pathListBox.Items as ListBox.ObjectCollection))
-                {
-                    //检查用户添加是否是文件夹
-                    if (Directory.Exists(item))
-                    {
-                        //获取目录下面的视频文件
-                        var top_files = Directory.EnumerateFiles(item, "*.*", SearchOption.AllDirectories)
-                            .Where(f =>
-                            f.EndsWith(".mkv", StringComparison.CurrentCultureIgnoreCase) ||
-                            f.EndsWith(".mp4", StringComparison.CurrentCultureIgnoreCase) ||
-                            f.EndsWith(".avi", StringComparison.CurrentCultureIgnoreCase) ||
-                            f.EndsWith(".asf", StringComparison.CurrentCultureIgnoreCase) ||
-                            f.EndsWith(".wmv", StringComparison.CurrentCultureIgnoreCase) ||
-                            f.EndsWith(".rmvb", StringComparison.CurrentCultureIgnoreCase) ||
-                            f.EndsWith(".rm", StringComparison.CurrentCultureIgnoreCase));
-                        list.AddRange(top_files);
-                    }
-                }
-                //过滤已经存在nfo的视频
-                if (checkBox_filternfo.Checked)
-                {
-                    for (int i = 0; i < list.Count; i++)
-                    {
-                        var item = list[i];
-                        var name = $"{Path.GetDirectoryName(item)}{Path.DirectorySeparatorChar}{Path.GetFileNameWithoutExtension(item)}.nfo";
-                        if (File.Exists(name))
-                        {
-                            list.RemoveAt(i);
-                            i--;
-                        }
-                    }
-                }
-                //没有需要整理的文件
-                if (list.Count == 0)
-                {
-                    IsRun = false;
-                    //设置进度条为普通效果
-                    progressBar1.Style = ProgressBarStyle.Blocks;
-                    toolStripStatusLabel1.Text = "没有需要处理的视频文件";
-                    return;
-                }
-                LogAdd($"共搜索到 {list.Count} 个视频文件");
+                //更新界面为停止运行
+                UpdateUI(false);
+                IsRun = false;
+            }), new FileProcess.OnLogHandle((str, logLevel) =>
+            {
+                LogAdd(str, logLevel);
+            }), new FileProcess.OnProgressHandle((value) => { UpdateProgress(value); }));
+            progressBar1.ProgressType = eProgressItemType.Standard;
 
-                toolStripStatusLabel1.Text = "开始处理中...";
+            //没找到文件的时候FileProcess会直接触发结束事件，优先执行，导致这里覆盖了UI状态
+            if (IsRun)
+            {
+                //更新界面为开始运行
+                UpdateUI(true);
+            }
+        }
 
-                //开始整理
-                FileProcess.Start(list, config);
-
-                progressBar1.Style = ProgressBarStyle.Blocks;
-
-                //没找到文件的时候FileProcess会直接触发结束事件，优先执行，导致这里覆盖了UI状态
-                if (IsRun)
+        private void buttonX1_Click(object sender, EventArgs e)
+        {
+            if (bgWorker1.IsBusy)
+            {
+                ShowToast("媒体库正在扫描中，请稍等");
+                return;
+            }
+            if (Directory.Exists(config.LibraryPath))
+            {
+                if (tabControlPanel4.Controls["cardPanel"] != null)
                 {
-                    //更新界面为开始运行
-                    UpdateUI(true);
+                    tabControlPanel4.Controls["cardPanel"].Dispose();
+                    GC.Collect();
                 }
+                circularProgress1.Visible = true;
+                labelX5.Visible = true;
+                circularProgress1.IsRunning = true;
+
+                bgWorker1.RunWorkerAsync();
             }
             else
             {
-                toolStripStatusLabel1.Text = "请先添加待整理的影片目录";
+                ShowToast("媒体库文件夹不存在");
             }
+        }
+
+        /// <summary>
+        /// 加载媒体库
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void bgWorker1_DoWork(object sender, System.ComponentModel.DoWorkEventArgs e)
+        {
+            libFiles = Directory.EnumerateFiles(config.LibraryPath, "*.*", SearchOption.AllDirectories)
+                    .Where(f =>
+                    f.EndsWith(".mkv", StringComparison.CurrentCultureIgnoreCase) ||
+                    f.EndsWith(".mp4", StringComparison.CurrentCultureIgnoreCase) ||
+                    f.EndsWith(".avi", StringComparison.CurrentCultureIgnoreCase) ||
+                    f.EndsWith(".asf", StringComparison.CurrentCultureIgnoreCase) ||
+                    f.EndsWith(".wmv", StringComparison.CurrentCultureIgnoreCase) ||
+                    f.EndsWith(".rmvb", StringComparison.CurrentCultureIgnoreCase) ||
+                    f.EndsWith(".rm", StringComparison.CurrentCultureIgnoreCase)).ToList();
+            libFiles.Sort((x1, y1) =>
+            {
+                var x = Path.GetFileNameWithoutExtension(x1);
+                var y = Path.GetFileNameWithoutExtension(y1);
+                return x.CompareTo(y);
+            });
+            libPage++;
+            AddCard();
+        }
+
+        private void AddCard()
+        {
+            Invoke(new EventHandler((o1, e1) =>
+            {
+                tabControlPanel4.Controls.RemoveByKey("cardPanel");
+            }));
+            var flowLayoutPanel1 = new Panel()
+            {
+                Name = "cardPanel",
+                AutoScroll = true,
+                Location = new Point(55, 44),
+                Size = new Size(tabControlPanel4.Width - 479, tabControlPanel4.Height - 8),
+                BorderStyle = BorderStyle.None,
+                BackColor = Color.White
+            };
+            var count = 6;
+            var width = (flowLayoutPanel1.Width - 30) / count;
+            for (int i = libPage * 12; i < libPage * 12 + 12; i++)
+            {
+                var item = libFiles[i];
+                try
+                {
+                    //加载影片信息
+                    var movieInfo = NfoTools.Load(item);
+
+                    //创建信息卡片
+                    var card = new InfoCard()
+                    {
+                        Width = width,
+                        Height = (int)(width / 0.55),
+                        Cursor = Cursors.Hand,
+                        Movie = movieInfo,
+                        VideoFile = new VideoInfo()
+                        {
+                            filename = item,
+                            name = Path.GetFileNameWithoutExtension(item),
+                            num = movieInfo.Number
+                        }
+                    };
+                    //双击播放事件
+                    card.DoubleClick += (o1, e1) =>
+                    {
+                        Process.Start(item);
+                    };
+                    //单击信息查看
+                    card.Click += (o1, e1) =>
+                    {
+                        ShowMovieDetail(card);
+                    };
+                    //计算位置
+                    var x = (i % 12) % count * card.Width + ((i % 12) % count) + 4;
+                    var y = (i % 12) / count * card.Height + ((i % 12) / count * 20) + 10;
+                    card.Location = new Point(x, y);
+                    flowLayoutPanel1.Controls.Add(card);
+                }
+                catch (Exception e1)
+                {
+                    Console.WriteLine(e1.Message);
+                }
+            }
+            if (flowLayoutPanel1.Controls.Count > 0)
+            {
+                Invoke(new EventHandler((o1, e1) =>
+                {
+                    tabControlPanel4.Controls.Add(flowLayoutPanel1);
+                }));
+            }
+            else
+            {
+                flowLayoutPanel1.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// 媒体库加载完成
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void bgWorker1_RunWorkerCompleted(object sender, System.ComponentModel.RunWorkerCompletedEventArgs e)
+        {
+            circularProgress1.Visible = false;
+            labelX5.Visible = false;
+            circularProgress1.IsRunning = false;
+        }
+
+        /// <summary>
+        /// 手动裁剪封面
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void button_clip_Click(object sender, EventArgs e)
+        {
+            if (selectCard == null)
+            {
+                ShowToast("请先选择一部影片");
+                return;
+            }
+            try
+            {
+                new ImageTools(config).ClipCover(Path.GetDirectoryName(selectCard.VideoFile.filename), selectCard.Movie.Backdrop, !config.CensoredNoAI && selectCard.VideoFile.avtype != "无码");
+                selectCard.Movie = selectCard.Movie;
+                selectCard.Refresh();
+                ShowToast("裁剪完成");
+                return;
+            }
+            catch (Exception e1)
+            {
+                ShowToast($"裁剪出错 {e1.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 打开所在文件夹
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void button_openfolder_Click(object sender, EventArgs e)
+        {
+            if (selectCard == null)
+            {
+                ShowToast("请先选择一部影片");
+                return;
+            }
+            Process.Start(Path.GetDirectoryName(selectCard.Movie.Backdrop));
+        }
+
+        /// <summary>
+        /// 访问影片采集页
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void linkLabel_website_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            Process.Start(linkLabel_website.Text);
+        }
+
+        /// <summary>
+        /// 采集影片资料
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void button_update_Click(object sender, EventArgs e)
+        {
+            if (IsRun)
+            {
+                ShowToast("有任务正在执行");
+                return;
+            }
+            if (selectCard == null)
+            {
+                ShowToast("请先选择一部影片");
+                return;
+            }
+            panelEx1.Enabled = false;
+            ShowToast("正在采集影片信息...");
+            FileProcess.Start(new List<VideoInfo>() { selectCard.VideoFile }, config, new FileProcess.OnCompleteHandle(() =>
+            {
+                Invoke(new EventHandler((o1, e1) =>
+                {
+                    selectCard.Movie = NfoTools.Load(selectCard.VideoFile.filename);
+                    panelEx1.Enabled = true;
+                    ShowToast("影片信息采集成功");
+                }));
+            }),
+            new FileProcess.OnLogHandle((str, logLevel) =>
+            {
+                LogAdd(str, logLevel);
+            }));
+        }
+
+        /// <summary>
+        /// 显示影片详情
+        /// </summary>
+        /// <param name="card">卡片</param>
+        private void ShowMovieDetail(InfoCard card)
+        {
+            if (selectCard != null)
+            {
+                selectCard.IsSelected = false;
+            }
+            pictureBox_backdrop.Image = Image.FromStream(new MemoryStream(File.ReadAllBytes(card.Movie.Backdrop)));
+            textBox_year.Text = card.Movie.Year;
+            textBox_publisher.Text = card.Movie.Publisher;
+            textBox_studio.Text = card.Movie.Studio;
+            textBox_direct.Text = card.Movie.Direct;
+            textBox_series.Text = card.Movie.Series;
+            textBox_genre.Text = string.Join("，", card.Movie.Genre);
+            textBox_star.Text = string.Join("，", card.Movie.Star);
+            linkLabel_website.Text = card.Movie.WebSite;
+            selectCard = card;
+            selectCard.IsSelected = true;
+        }
+
+        /// <summary>
+        /// 显示Toast提示
+        /// </summary>
+        /// <param name="str">内容</param>
+        private void ShowToast(string str)
+        {
+            ToastNotification.Show(this, str);
         }
 
         /// <summary>
@@ -369,7 +662,7 @@ namespace 老司机影片整理
         {
             Invoke(new EventHandler((o, e) =>
             {
-                toolStripStatusLabel1.Text = $"已处理 {value}% ...";
+                progressBar1.Text = $"已处理 {value}% ...";
                 progressBar1.Value = value;
             }));
         }
@@ -378,30 +671,15 @@ namespace 老司机影片整理
         /// 记录日志
         /// </summary>
         /// <param name="str">内容</param>
-        private void LogAdd(string str, string type = "tabPage_main", string color = "Black")
+        private void LogAdd(string str, LogLevels logLevel = LogLevels.Out)
         {
+            var color = logLevel == LogLevels.Out ? "Black" : logLevel == LogLevels.Error ? "Red" : logLevel == LogLevels.Waining ? "Orange" : "Green";
+            var logState = logLevel == LogLevels.Out ? "提示" : logLevel == LogLevels.Error ? "错误" : logLevel == LogLevels.Waining ? "警告" : "成功";
             Invoke(new EventHandler((o, e) =>
             {
-                if (tabControl1.TabPages[type] == null)
-                {
-                    TabPage page = new TabPage()
-                    {
-                        Name = type,
-                        Text = type
-                    };
-                    RichTextBox textBox = new RichTextBox()
-                    {
-                        Dock = DockStyle.Fill,
-                        WordWrap = false,
-                        BorderStyle = BorderStyle.None
-                    };
-                    page.Controls.Add(textBox);
-                    tabControl1.TabPages.Add(page);
-                }
-                var richTextBox = tabControl1.TabPages[type].Controls[0] as RichTextBox;
-                richTextBox.SelectionColor = type == "tabPage_main" ? Color.Red:ColorTranslator.FromHtml(color);
-                richTextBox.AppendText(str + "\n");
-                richTextBox.ScrollToCaret();
+                richTextBox1.SelectionColor = ColorTranslator.FromHtml(color);
+                richTextBox1.AppendText($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} [{logState}] {str}\n");
+                richTextBox1.ScrollToCaret();
             }));
         }
 
@@ -417,12 +695,30 @@ namespace 老司机影片整理
                 {
                     progressBar1.Value = 0;
                 }
-                groupBox1.Enabled = !isStart;
-                groupBox2.Enabled = !isStart;
+                groupPanel1.Enabled = !isStart;
+                groupPanel2.Enabled = !isStart;
+                groupPanel3.Enabled = !isStart;
+                groupPanel4.Enabled = !isStart;
+                groupPanel5.Enabled = !isStart;
+                panelEx1.Enabled = !isStart;
                 button_start.Text = isStart ? "停止整理" : "开始整理";
                 button_start.Enabled = true;
+                progressBar1.Visible = false;
+                ShowToast(isStart ? "开始整理" : "整理完成");
                 IsRun = isStart;
             }));
+        }
+
+        #region 设置自动保存
+
+        private void radioButton_aiclip_CheckedChanged(object sender, EventArgs e)
+        {
+            textBox_apikey.Enabled = radioButton_aiclip.Checked;
+            textBox_secretkey.Enabled = radioButton_aiclip.Checked;
+            labelX1.Enabled = radioButton_aiclip.Checked;
+            labelX2.Enabled = radioButton_aiclip.Checked;
+            config.AIClip = radioButton_aiclip.Checked;
+            SaveConfig();
         }
 
         private void button_titledefault_Click(object sender, EventArgs e)
@@ -443,7 +739,7 @@ namespace 老司机影片整理
 
         private void textBox_labrarypath_TextChanged(object sender, EventArgs e)
         {
-            config.LabraryPath = textBox_labrarypath.Text;
+            config.LibraryPath = textBox_librarypath.Text;
             SaveConfig();
         }
 
@@ -477,10 +773,48 @@ namespace 老司机影片整理
             SaveConfig();
         }
 
-        private void numericUpDown_maxthread_ValueChanged(object sender, EventArgs e)
+        private void checkBox_imgnodown_CheckedChanged(object sender, EventArgs e)
         {
-            config.MaxThread = (int)numericUpDown_maxthread.Value;
+            config.SkipExistsImage = checkBox_imgnodown.Checked;
             SaveConfig();
+        }
+
+        private void checkBox_filternfo_CheckedChanged(object sender, EventArgs e)
+        {
+            config.SkipSearchExistsNfo = checkBox_filternfo.Checked;
+            SaveConfig();
+        }
+
+        private void doubleInput_score_ValueChanged(object sender, EventArgs e)
+        {
+            config.AIScore = doubleInput_score.Value;
+            SaveConfig();
+
+        }
+
+        private void checkBox_noai_CheckedChanged(object sender, EventArgs e)
+        {
+            config.CensoredNoAI = checkBox_noai.Checked;
+            SaveConfig();
+        }
+        #endregion
+
+        private void button_next_Click(object sender, EventArgs e)
+        {
+            if (libPage <= libFiles.Count / 12 + 1)
+            {
+                libPage++;
+                AddCard();
+            }
+        }
+
+        private void button_prev_Click(object sender, EventArgs e)
+        {
+            if (libPage - 1 >= 0)
+            {
+                libPage--;
+                AddCard();
+            }
         }
     }
 }

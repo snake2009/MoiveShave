@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace 老司机影片整理
 {
-    class MovieInfo
+    public class MovieInfo
     {
         /// <summary>
         /// 番号
@@ -58,5 +58,6 @@ namespace 老司机影片整理
         /// </summary>
         public string Publisher { get; internal set; }
         public string Generate { get; internal set; }
+        public string Attr { get; internal set; }
     }
 }
