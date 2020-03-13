@@ -217,7 +217,7 @@ namespace 老司机影片整理
                 if (info.Generate == "avsox")//avsox 老片子个别没图片，用javbus 在尝试一次
                 {
                     Log.Save($"下载 avsox 图片失败, 换 javbus");
-                    info = GetMovieInfo(num, config, SiteTypes.javbus);
+                    info.Backdrop = GetMovieInfo(num, config, SiteTypes.javbus).Backdrop;
                     if (info != null)
                     {
                         backdropPath = DownImage(videoPath, info.Backdrop, "Backdrop.jpg", config.SkipExistsImage);
@@ -262,7 +262,7 @@ namespace 老司机影片整理
 
             Log.Save($"下载识别，或者下载的尺寸太小，准备截图");
             //没发下载，或者下载的尺寸太小 需要截图
-            new ImageTools(config).ClipCover(videoPath, backdropPath, !config.CensoredNoAI && videoInfo.avtype != "无码");
+            new ImageTools(config).ClipCover(videoPath, backdropPath, config.CensoredNoAI && videoInfo.avtype != "无码");
             videoInfo.cover = "成功";
             Log.Save($"处理封面图完成");
             OnLog?.Invoke($"处理封面图完成", LogLevels.Success);
@@ -415,36 +415,37 @@ namespace 老司机影片整理
                 //判断是否两个视频
                 var dirName = Path.GetDirectoryName(filename);
                 var name = Path.GetFileNameWithoutExtension(filename);
-                var filename1 = $"{dirName}{Path.DirectorySeparatorChar}{name}_1{extName}";
+                name = name.Remove(name.Length - 2);
                 var filename2 = $"{dirName}{Path.DirectorySeparatorChar}{name}_2{extName}";
                 var filename3 = $"{dirName}{Path.DirectorySeparatorChar}{name}_3{extName}";
                 var filename4 = $"{dirName}{Path.DirectorySeparatorChar}{name}_4{extName}";
-                if (File.Exists(filename1))
+                var filename5 = $"{dirName}{Path.DirectorySeparatorChar}{name}_5{extName}";
+                if (File.Exists(filename2))
                 {
                     newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd1{extName}";
                     File.Move(filename, newFilePath);
-                    Log.Save($"移动cd1完成 {newFilePath}");
+                    Log.Save($"移动1完成 {newFilePath}");
 
                     newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd2{extName}";
-                    File.Move(filename1, newFilePath);
-                    Log.Save($"移动cd2完成 {newFilePath}");
-                    if (File.Exists(filename2))
-                    {
-                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd3{extName}";
-                        File.Move(filename2, newFilePath);
-                        Log.Save($"移动cd3完成 {newFilePath}");
-                    }
+                    File.Move(filename2, newFilePath);
+                    Log.Save($"移动2完成 {newFilePath}");
                     if (File.Exists(filename3))
                     {
-                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd4{extName}";
+                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd3{extName}";
                         File.Move(filename3, newFilePath);
-                        Log.Save($"移动cd3完成 {newFilePath}");
+                        Log.Save($"移动3完成 {newFilePath}");
                     }
                     if (File.Exists(filename4))
                     {
-                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd5{extName}";
+                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd4{extName}";
                         File.Move(filename4, newFilePath);
-                        Log.Save($"移动cd3完成 {newFilePath}");
+                        Log.Save($"移动4完成 {newFilePath}");
+                    }
+                    if (File.Exists(filename5))
+                    {
+                        newFilePath = $"{videoPath}{Path.DirectorySeparatorChar}{info.Number}-cd5{extName}";
+                        File.Move(filename5, newFilePath);
+                        Log.Save($"移动5完成 {newFilePath}");
                     }
                     OnLog?.Invoke($"移动多个视频完成", LogLevels.Success);
 

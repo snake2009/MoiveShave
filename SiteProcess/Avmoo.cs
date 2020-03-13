@@ -41,7 +41,7 @@ namespace 老司机影片整理
                 HtmlNode node = null;
                 foreach (var item in nodes)
                 {
-                    if (item.SelectSingleNode("a/div[2]/span/date[1]").InnerText.ToLower() == num.ToLower())
+                    if (item.SelectSingleNode("a/div[2]/span/date[1]").InnerText.Replace("-","").Replace("_", "").ToLower() == num.Replace("-", "").Replace("_", "").ToLower())
                     {
                         node = item;
                         break;

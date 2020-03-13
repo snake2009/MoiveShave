@@ -57,7 +57,8 @@ namespace 老司机影片整理
                 }
                 foreach (var item in nodes)
                 {
-                    if (item.SelectSingleNode("a/div[2]/span/date[1]").InnerText.ToLower().Contains(num.ToLower()))
+                    var s_num = item.SelectSingleNode("a/div[2]/span/date[1]").InnerText;
+                    if (s_num.Replace("-", "").Replace("_", "").ToLower().Contains(num.Replace("-", "").Replace("_", "").ToLower()))
                     {
                         detailUrl = item.SelectSingleNode("a").Attributes["href"].Value;
                         doc = web.Load(detailUrl);

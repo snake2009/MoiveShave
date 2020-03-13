@@ -227,10 +227,10 @@ namespace 老司机影片整理
                             !filename.EndsWith("-cd3", StringComparison.CurrentCultureIgnoreCase) &&
                             !filename.EndsWith("-cd4", StringComparison.CurrentCultureIgnoreCase) &&
                             !filename.EndsWith("-cd5", StringComparison.CurrentCultureIgnoreCase) &&
-                            !filename.EndsWith("_1", StringComparison.CurrentCultureIgnoreCase) &&
                             !filename.EndsWith("_2", StringComparison.CurrentCultureIgnoreCase) &&
                             !filename.EndsWith("_3", StringComparison.CurrentCultureIgnoreCase) &&
-                            !filename.EndsWith("_4", StringComparison.CurrentCultureIgnoreCase);
+                            !filename.EndsWith("_4", StringComparison.CurrentCultureIgnoreCase) &&
+                            !filename.EndsWith("_5", StringComparison.CurrentCultureIgnoreCase);
                         }).Select(f =>
                         {
                             var name = Path.GetFileName(f);
@@ -471,6 +471,10 @@ namespace 老司机影片整理
             var width = (flowLayoutPanel1.Width - 30) / count;
             for (int i = libPage * 12; i < libPage * 12 + 12; i++)
             {
+                if (i >= libFiles.Count)
+                {
+                    break;
+                }
                 var item = libFiles[i];
                 try
                 {
@@ -551,7 +555,7 @@ namespace 老司机影片整理
             }
             try
             {
-                new ImageTools(config).ClipCover(Path.GetDirectoryName(selectCard.VideoFile.filename), selectCard.Movie.Backdrop, !config.CensoredNoAI && selectCard.VideoFile.avtype != "无码");
+                new ImageTools(config).ClipCover(Path.GetDirectoryName(selectCard.VideoFile.filename), selectCard.Movie.Backdrop, config.CensoredNoAI && selectCard.VideoFile.avtype != "无码");
                 selectCard.Movie = selectCard.Movie;
                 selectCard.Refresh();
                 ShowToast("裁剪完成");
@@ -801,7 +805,7 @@ namespace 老司机影片整理
 
         private void button_next_Click(object sender, EventArgs e)
         {
-            if (libPage <= libFiles.Count / 12 + 1)
+            if ((libPage + 1) * 12 < libFiles.Count)
             {
                 libPage++;
                 AddCard();

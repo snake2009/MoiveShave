@@ -71,6 +71,8 @@ namespace 老司机影片整理
             movie.Cover = img.Attributes["src"].Value;
             //标题
             movie.Title = img.Attributes["title"].Value;
+            //番号
+            movie.Number = node.SelectSingleNode("div[2]/span/date[1]").InnerText;
             //加载详情页
             var detailUrl = node.Attributes["href"].Value;
             client.DefaultRequestHeaders.Referrer = new Uri(searchUrl);

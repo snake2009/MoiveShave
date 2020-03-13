@@ -18,7 +18,7 @@ namespace 老司机影片整理
             {
                 throw new Exception($"暂时不支持 {filepath}");
             }
-            filename = filename.Replace("dioguitar", "").Replace("Carib-", "");
+            filename = filename.Replace("dioguitar", "").Replace("Carib-", "").Replace("Caribbeancom", "分隔").Replace("[", "分隔").Replace("]", "分隔");
             //优先处理 (FC2)(745325) 这种格式
             var re = Regex.Match(filename, @"\(FC2\)\([0-9]{6,8}\)", RegexOptions.IgnoreCase);
             if (re.Success)
@@ -56,10 +56,20 @@ namespace 老司机影片整理
                 return re.Groups[0].Value;
             }
             //正则匹配番号 支持 [CWP-111] [AAA_111] [AAA|111] [AAA 111] [MKBD-S123] 四种格式，AAA支持1~8位长度允许夹杂数字（S2MBD-001），111支持2~8位数字
-            re = Regex.Match(filename, @"([a-zA-Z0-9]{1,9})[-|_|\s]{0,3}[a-zA-Z]{0,1}([0-9]{2,8})(.*?)");
-            if (re.Success)
+            var res = Regex.Matches(filename, @"([a-zA-Z0-9]{1,9})[-|_|\s]{0,3}[a-zA-Z]{0,1}([0-9]{2,8})(.*?)");
+            if (res[0].Success)
             {
-                return re.Groups[0].Value;
+                //180464_3xplanet_Caribbeancom_013120-001
+                if (filename.Contains("3xplanet"))
+                {
+                    return res[1].Groups[0].Value;
+                }
+                //[456k.me]ofje-046.mp4
+                if (res[0].Groups[0].Value.Length <= 5)
+                {
+                    return res[1].Groups[0].Value;
+                }
+                return res[0].Groups[0].Value;
             }
             return "";
         }
@@ -82,6 +92,7 @@ namespace 老司机影片整理
                 || name.Contains("sskp")
                 || name.Contains("sskx")
                 || name.Contains("heyzo")
+                || name.Contains("gachi")
                 || name.Contains("laf")
                 || name.Contains("cwp")
                 || name.Contains("mcb")
@@ -102,7 +113,7 @@ namespace 老司机影片整理
                 || Regex.Match(name, @"bd[-_]{0,1}m\d{2}").Success
                 || Regex.Match(name, @"xv\d{2}").Success
                 || Regex.Match(name, @"mx[-_]{1}m\d{2}").Success
-                || Regex.Match(name, @"(bt|bd|ct|pt|fh|kg|hey|trg|trp|tw)[-_]{1}\d{2,4}").Success
+                || Regex.Match(name, @"(bt|ct|pt|fh|kg|hey|trg|trp|tw)[-_]{1}\d{2,4}").Success
                 || Regex.Match(name, @"gachi[p]{0,1}[-_]\d{2,4}").Success // gachi-050 gachip-137
                 || Regex.Match(name, @"\d{6}[-_]\d{2,3}").Success //030312_01 021816-099
                 || Regex.Match(name, @"\d{6}[-_]\d{3}[-_]\d{2}").Success //021816-099
