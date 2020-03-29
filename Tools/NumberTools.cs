@@ -56,7 +56,7 @@ namespace 老司机影片整理
                 return re.Groups[0].Value;
             }
             //正则匹配番号 支持 [CWP-111] [AAA_111] [AAA|111] [AAA 111] [MKBD-S123] 四种格式，AAA支持1~8位长度允许夹杂数字（S2MBD-001），111支持2~8位数字
-            var res = Regex.Matches(filename, @"([a-zA-Z0-9]{1,9})[-|_|\s]{0,3}[a-zA-Z]{0,1}([0-9]{2,8})(.*?)");
+            var res = Regex.Matches(filename, @"([a-zA-Z0-9]{1,10})[-|_|\s]{0,3}[a-zA-Z]{0,1}([0-9]{2,8})(.*?)");
             if (res[0].Success)
             {
                 //180464_3xplanet_Caribbeancom_013120-001
@@ -109,6 +109,7 @@ namespace 老司机影片整理
                 || name.Contains("dnk")
                 || name.Contains("mtb")
                 || name.Contains("fc2")
+                || name.Contains("hamesamurai")
                 || Regex.Match(name, @"^n\d{4}").Success
                 || Regex.Match(name, @"bd[-_]{0,1}m\d{2}").Success
                 || Regex.Match(name, @"xv\d{2}").Success
