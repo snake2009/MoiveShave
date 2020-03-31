@@ -492,7 +492,8 @@ namespace 老司机影片整理
                         {
                             filename = item,
                             name = Path.GetFileNameWithoutExtension(item),
-                            num = movieInfo.Number
+                            num = movieInfo.Number,
+                            avtype = NumberTools.IsUncensored(movieInfo.Number) ? "无码" : ""
                         }
                     };
                     //双击播放事件

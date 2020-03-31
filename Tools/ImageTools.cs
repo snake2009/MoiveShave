@@ -64,6 +64,10 @@ namespace 老司机影片整理
                             personList.Add(person);
                         }
                     }
+                    if (personList.Count == 0)
+                    {
+                        Log.Save($"人物识别准确度太高，请适当降低");
+                    }
                 }
                 //没有找到人脸
                 if (personList.Count == 0)
